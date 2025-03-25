@@ -1,151 +1,210 @@
 package com.example.bluetooth
 
-import android.Manifest
-import android.os.Bundle
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
-import com.example.bluetooth.ui.theme.BluetoothTheme
+import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.Bundle
 import android.util.Log
+import android.widget.Button
 import android.widget.Toast
-import androidx.annotation.RequiresApi
-import androidx.core.app.ActivityCompat
+import androidx.activity.ComponentActivity
+import androidx.activity.result.ActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.os.BundleCompat
+import com.example.bluetooth.R
+import java.util.UUID
+
 
 class MainActivity : ComponentActivity() {
 
-    private lateinit var bluetoothAdapter: BluetoothAdapter
     companion object {
-        private const val REQUEST_ENABLE_BT = 1
+        const val NAME: String = "MyBluetoothService"//An arbitrary name
+        val MY_UUID: UUID =
+            UUID.fromString("3c8ffb84-f3d3-4b6b-a0d9-0f1d9b0bb010")//An Arbitrary random UUID
     }
 
-    private val receiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context, intent: Intent) {
-            Log.d("TEST", "coucou")
-            val action = intent.action
-            if (BluetoothDevice.ACTION_FOUND == action) {
-                val device: BluetoothDevice? = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
-                Log.d("TEST", "device: "+device.toString())
-                // Add the device to a list or display its name and address
-            }
-        }
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        unregisterReceiver(receiver)
-    }
-
+    private var bluetoothAdapter: BluetoothAdapter? = null
+    val devices: ArrayList<BluetoothDevice> = ArrayList()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            if (ActivityCompat.checkSelfPermission(
-                    this,
-                    Manifest.permission.BLUETOOTH_CONNECT
-                ) != PackageManager.PERMISSION_GRANTED
-            ) {
-                Log.d("TEST", "Pas de permissions")
-                ActivityCompat.requestPermissions(
-                    this,
-                    arrayOf(
-                        Manifest.permission.BLUETOOTH,
-                        Manifest.permission.BLUETOOTH_ADMIN,
-                        Manifest.permission.BLUETOOTH_SCAN,
-                        Manifest.permission.BLUETOOTH_ADVERTISE,
-                        Manifest.permission.BLUETOOTH_CONNECT,
-                        Manifest.permission.ACCESS_COARSE_LOCATION,
-                        Manifest.permission.ACCESS_FINE_LOCATION
-                    ),
-                    PackageManager.PERMISSION_GRANTED
-                )
-                // TODO: Consider calling
-                //    ActivityCompat#requestPermissions
-                //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
-                //                                          int[] grantResults)
-                // to handle the case where the user grants the permission. See the documentation
-                // for ActivityCompat#requestPermissions for more details.
-                return
-            }
-        } else {
-            if (ActivityCompat.checkSelfPermission(
-                    this,
-                    Manifest.permission.BLUETOOTH
-                ) != PackageManager.PERMISSION_GRANTED
-            ) {
-                Log.d("TEST", "Pas de permissions")
-                ActivityCompat.requestPermissions(this,
-                    arrayOf(Manifest.permission.ACCESS_BACKGROUND_LOCATION, Manifest.permission.BLUETOOTH, Manifest.permission.BLUETOOTH_ADMIN, Manifest.permission.ACCESS_COARSE_LOCATION,Manifest.permission.ACCESS_FINE_LOCATION),
-                    PackageManager.PERMISSION_GRANTED
-                )
-                // TODO: Consider calling
-                //    ActivityCompat#requestPermissions
-                //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
-                //                                          int[] grantResults)
-                // to handle the case where the user grants the permission. See the documentation
-                // for ActivityCompat#requestPermissions for more details.
-                return
-            }
-        }
-        bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
+
+        setContentView(R.layout.main_layout)
+        bluetoothAdapter = (getSystemService(BLUETOOTH_SERVICE) as BluetoothManager).adapter
+        val scanButton = findViewById<Button>(R.id.scan_button)
+
+        packageManager.hasSystemFeature(PackageManager.FEATURE_SENSOR_HEART_RATE_ECG)
+
         if (bluetoothAdapter == null) {
-            Toast.makeText(this, "Bluetooth not supported", Toast.LENGTH_SHORT).show()
-            finish()
+            // Device doesn't support Bluetooth
+            scanButton.isEnabled = false
+            scanButton.text = getString(R.string.not_supported)
+            Toast.makeText(this, "Your device doesn't support bluetooth", Toast.LENGTH_SHORT).show()
+
+        } else {
+
+            // Device supports Bluetooth
+            scanButton.isEnabled = true
+            scanButton.setOnClickListener { onClickScanButton() }
+
+            null.setDiscoverable()
         }
-        Log.d("TEST", "a")
-        if (!bluetoothAdapter.isEnabled) {
-            val enableBluetoothIntent = Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)
 
-              // here to request the missing permissions, and then overriding
-            startActivityForResult(enableBluetoothIntent, REQUEST_ENABLE_BT)
+    }
+
+    private fun Int?.setDiscoverable() {
+        val discoverableIntent: Intent =
+            Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE).apply {
+                putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, this@setDiscoverable ?: 300)
+            }
+
+        setDiscoverable.launch(discoverableIntent)
+    }
+
+    private val setDiscoverable = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {}
+
+    private fun onClickScanButton() {
+        val oldSize = devices.size
+        devices.clear()
+
+        // Different permission management depending on android versions
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            requestMultiplePermissions.launch(
+                arrayOf(
+                    android.Manifest.permission.BLUETOOTH_SCAN,
+                    android.Manifest.permission.BLUETOOTH_CONNECT,
+                    android.Manifest.permission.ACCESS_FINE_LOCATION,
+                )
+            )
+        } else {
+            requestEnableBluetooth.launch(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE))
+        }
+    }
+
+    //Multiple requests for android 12+
+    private val requestMultiplePermissions =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
+            if (permissions["android.permission.BLUETOOTH_SCAN"] == true && permissions["android.permission.BLUETOOTH_CONNECT"] == true) {
+                //Bluetooth permission granted
+                scanIfEnabled()
+
+            } else {
+                //Bluetooth permission still not granted
+                Toast.makeText(this, "Can't scan until permission is granted", Toast.LENGTH_LONG)
+                    .show()
+            }
+        }
+
+    //Request for old android versions
+    private val requestEnableBluetooth =
+        this.registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result: ActivityResult ->
+            if (result.resultCode == RESULT_OK) {
+                //Bluetooth permission granted
+                scanIfEnabled()
+            } else {
+                //Bluetooth permission still not granted
+                Toast.makeText(this, "Can't scan until permission is granted", Toast.LENGTH_LONG)
+                    .show()
+            }
+        }
+
+    private fun scanIfEnabled() {
+        if (bluetoothAdapter!!.isEnabled) { //Check if bluetooth is enabled by user (always true on Android 6)
+            //Permission granted and Bluetooth enabled
+            scan()
+        } else {
+            //Permission granted but Bluetooth disabled
+            Toast.makeText(this, "Can't scan until bluetooth is enabled", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun scan() {
+
+        val discoveryStarted = bluetoothAdapter!!.startDiscovery()
+        Log.d("Scan", "Discovery started -> $discoveryStarted")
+
+        if (discoveryStarted) {
+            registerReceiver(scanReceiver, IntentFilter(BluetoothDevice.ACTION_FOUND))
+            registerReceiver(scanReceiver, IntentFilter(BluetoothAdapter.ACTION_DISCOVERY_STARTED))
+            registerReceiver(scanReceiver, IntentFilter(BluetoothAdapter.ACTION_DISCOVERY_FINISHED))
+        } else {
+            //Depending on the android version, we might need location permission
+            //This is because scanning for bluetooth devices might give information of your own location
+            requestLocationPermission()
+        }
+
+    }
+
+    private fun requestLocationPermission() {
+        requestPermissionLauncher.launch(android.Manifest.permission.ACCESS_FINE_LOCATION)
+    }
+
+    private val requestPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted: Boolean ->
+            if (isGranted) {
+                // Permission granted
+                Toast.makeText(
+                    this, "Location permission granted, make sure it is enabled", Toast.LENGTH_SHORT
+                ).show()
+            } else {
+                // Permission denied
+                Toast.makeText(
+                    this,
+                    "Unfortunately, you need location permission to scan bluetooth devices",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
         }
 
 
+    // Create a BroadcastReceiver for ACTION_FOUND.
+    private val scanReceiver = object : BroadcastReceiver() {
 
-        val discoverDevicesIntent = IntentFilter(BluetoothDevice.ACTION_FOUND)
-        registerReceiver(receiver, discoverDevicesIntent)
-        val start = bluetoothAdapter.startDiscovery()
-        Log.d("TEST", "start discorvery?" + start.toString())
+        @SuppressLint("MissingPermission")
+        override fun onReceive(context: Context, intent: Intent) {
+            when (val action: String? = intent.action) {
+                BluetoothDevice.ACTION_FOUND -> {
+                    // Discovery has found a device. Get the BluetoothDevice
+                    // object and its info from the Intent.
 
-        setContent {
-            BluetoothTheme {
-                // A surface container using the 'background' color from the theme
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
-                ) {
-                    Greeting("Android")
+                    val device: BluetoothDevice? = BundleCompat.getParcelable(
+                        intent.extras!!, BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java
+                    )
+
+                    device?.let {
+
+                        device.name?.let { Log.d("scanReceiver", device.name) }
+                        device.address?.let { Log.d("scanReceiver", device.address) }
+                        if (!devices.any { it.address == device.address }) {
+                            devices.add(device)
+                        }
+                    }
+
+                }
+
+                else -> {
+                    action?.let { Log.d("scanReceiver", action) }
                 }
             }
         }
     }
-}
 
-@Composable
-fun Greeting(name: String, modifier: Modifier = Modifier) {
-    Text(
-        text = "Hello $name!",
-        modifier = modifier
-    )
-}
 
-@Preview(showBackground = true)
-@Composable
-fun GreetingPreview() {
-    BluetoothTheme {
-        Greeting("Android")
+    override fun onDestroy() {
+        super.onDestroy()
+
+        // Don't forget to unregister the ACTION_FOUND receiver.
+        unregisterReceiver(scanReceiver)
     }
+
 }
